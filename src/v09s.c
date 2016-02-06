@@ -67,6 +67,9 @@ void finish();
 
 static int fdump=0;
 
+/* Defaults for backwards compatability. */
+static int swi_for_putchar = 2;  /* 1, 2, or 3, for SWI, SWI2, SWI3. */
+static int swi_for_getchar = 3;  /* 1, 2, or 3, for SWI, SWI2, SWI3. */
 
 /* Default: no big endian ... */
 #ifndef CPU_BIG_ENDIAN
@@ -925,29 +928,39 @@ rti()
 swi()
 {
  int w;
+ int swi_num = iflag + 1; // 1, 2, or 3 for SWI, SWI2, or SWI3.
+
  da_inst("swi",(iflag==1)?"2":(iflag==2)?"3":"",5);
- switch(iflag)
- {
-  case 0:
-   PUSHWORD(pcreg)
-   PUSHWORD(ureg)
-   PUSHWORD(yreg)
-   PUSHWORD(xreg)
-   PUSHBYTE(dpreg)
-   PUSHBYTE(*breg)
-   PUSHBYTE(*areg)
-   PUSHBYTE(ccreg)
-   ccreg|=0xd0;
-   pcreg=GETWORD(0xfffa);
-   break;
-  case 1:
-   putchar(*breg);
-   fflush(stdout);
-   break;
-  case 2:
-   w=getchar();
-   if(w==EOF)SEC else CLC
-   *breg=w;
+
+ if (swi_num == swi_for_putchar) {
+  putchar(*breg);
+  fflush(stdout);
+ } else if (swi_num == swi_for_getchar) {
+  w=getchar();
+  if(w==EOF)SEC else CLC
+  *breg=w;
+ } else {
+  PUSHWORD(pcreg)
+  PUSHWORD(ureg)
+  PUSHWORD(yreg)
+  PUSHWORD(xreg)
+  PUSHBYTE(dpreg)
+  PUSHBYTE(*breg)
+  PUSHBYTE(*areg)
+  PUSHBYTE(ccreg)
+  switch(swi_num)
+  {
+   case 1:  /* SWI */
+    ccreg|=0xd0;
+    pcreg=GETWORD(0xfffa);
+    break;
+   case 2:  /* SWI2 */
+    pcreg=GETWORD(0xfff4);
+    break;
+   case 3:  /* SWI3 */
+    pcreg=GETWORD(0xfff2);
+    break;
+  }
  }
 }
 
@@ -1415,6 +1428,9 @@ read_image(char* name)
  if((image=fopen(name,"rb"))!=NULL) {
   fread(mem+0x100,0xff00,1,image);
   fclose(image);
+ } else {
+  fprintf(stderr,"ERROR: Cannot read image file\n");
+  exit(2);
  }
 }
 
@@ -1505,28 +1521,53 @@ void trace()
 #endif
 
 
-static char optstring[]="d";
+static char optstring[]="0ftdi:o:";
 
 main(int argc,char *argv[])
 {
  char c;
  int a;
-
- /* initialize memory with pseudo random data ... */
- srandom(time(NULL));
- for(a=0x0100; a<0x10000;a++) {
-        mem[(Word)a] = (Byte) (random() & 0xff);
- }
+ int zmode = 0, fmode = 0; // Init to 0, Init to F.
+ int tmode = 0;  // Trace.
 
  while( (c=getopt(argc, argv, optstring)) >=0 ) {
         switch(c) {
+          case '0':
+                zmode = 1;
+                break;
+          case 'f':
+                fmode = 1;
+                break;
+          case 't':
+                tmode = 1;
+                break;
           case 'd':
                 fdump = 1;
+                break;
+          case 'i':
+                swi_for_getchar = atoi(optarg);
+                break;
+          case 'o':
+                swi_for_putchar = atoi(optarg);
                 break;
           default:
                 fprintf(stderr,"ERROR: Unknown option\n");
                 exit(2);
         }
+ }
+
+ if (zmode) {
+   /* Initialize mem to all zeros. */
+   memset(mem, 0x00, sizeof mem);
+ } else if (fmode) {
+   /* Initialize mem to all FFs. */
+   memset(mem, 0xFF, sizeof mem);
+ } else {
+   /* initialize memory with pseudo random data ... */
+   srandom(time(NULL));
+   for(a=0x0100; a<0x10000;a++) {
+     mem[(Word)a] = (Byte) (random() & 0xff);
+   }
  }
 
  if (optind < argc) {
@@ -1566,7 +1607,9 @@ main(int argc,char *argv[])
   cycles_sum += cycles;
 
 #ifdef TRACE
-  trace();
+  if (tmode) {
+    trace();
+  }
 #endif
 
  pcreg_prev = pcreg;
