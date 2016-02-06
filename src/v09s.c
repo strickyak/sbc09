@@ -33,6 +33,14 @@
    The file name must be given on the command line.
 
    Revisions:
+        2016-02-06 Henry Strickland <strickyak>
+                Because OS/9 uses SWI2 for kernel calls, allow other SWIs for I/O.
+                -i={0,1,2,3} Input char on {none, SWI, SWI2, or SWI3}.
+                -o={0,1,2,3} Output char on {none, SWI, SWI2, or SWI3}
+                -0  Initialize mem to 00.
+                -F  Initialize mem to FF.
+                -t  Enable trace.  (Still requires -DTRACE).
+
         2012-06-05 johann AT klasek at
                 Fixed: com with C "NOT" operator ... 0^(value) did not work!
         2012-06-06
@@ -1521,13 +1529,13 @@ void trace()
 #endif
 
 
-static char optstring[]="0ftdi:o:";
+static char optstring[]="0Ftdi:o:";
 
 main(int argc,char *argv[])
 {
  char c;
  int a;
- int zmode = 0, fmode = 0; // Init to 0, Init to F.
+ int zmode = 0, Fmode = 0; // Init to 0, Init to F.
  int tmode = 0;  // Trace.
 
  while( (c=getopt(argc, argv, optstring)) >=0 ) {
@@ -1535,8 +1543,8 @@ main(int argc,char *argv[])
           case '0':
                 zmode = 1;
                 break;
-          case 'f':
-                fmode = 1;
+          case 'F':
+                Fmode = 1;
                 break;
           case 't':
                 tmode = 1;
@@ -1559,7 +1567,7 @@ main(int argc,char *argv[])
  if (zmode) {
    /* Initialize mem to all zeros. */
    memset(mem, 0x00, sizeof mem);
- } else if (fmode) {
+ } else if (Fmode) {
    /* Initialize mem to all FFs. */
    memset(mem, 0xFF, sizeof mem);
  } else {
